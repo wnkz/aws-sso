@@ -5,6 +5,9 @@ verify_ssl = true
 
 [dev-packages]
 autopep8 = "*"
+twine = "*"
+setuptools = "*"
+wheel = "*"
 
 [packages]
 awssso = {editable = true,path = "."}
