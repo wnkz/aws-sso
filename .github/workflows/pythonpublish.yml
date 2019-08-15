@@ -21,3 +21,8 @@ jobs:
         pipenv install --system -d
     - name: Build package
       run: python setup.py sdist bdist_wheel
+    - name: Upload to test PyPi
+      run: twine upload --repository-url https://test.pypi.org/legacy/ dist/*
+      env:
+        TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
+        TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
