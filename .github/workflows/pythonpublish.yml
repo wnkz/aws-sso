@@ -1,6 +1,11 @@
 name: Python-Publish
 
-on: [push]
+on:
+  push:
+    tags:
+      - '*'
+  release:
+    created
 
 jobs:
   build:
