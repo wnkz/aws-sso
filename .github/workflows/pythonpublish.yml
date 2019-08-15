@@ -1,4 +1,4 @@
-name: Python-Publish
+name: Python publish
 
 on: release
 
