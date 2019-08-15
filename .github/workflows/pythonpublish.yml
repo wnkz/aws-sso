@@ -1,4 +1,4 @@
-name: Python-Package
+name: Python-Publish
 
 on: [push]
 
@@ -16,8 +16,8 @@ jobs:
       with:
         version: ${{ matrix.python-version }}
     - name: Install dependencies
-      run: pip install .
-    - name: Run commands
       run: |
-        awssso --version
-        awssso --help
+        pip install --upgrade pip pipenv
+        pipenv install --system -d
+    - name: Build package
+      run: python setup.py sdist bdist_wheel
