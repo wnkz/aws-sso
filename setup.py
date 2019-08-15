@@ -1,17 +1,11 @@
 #!/usr/bin/env python
-import codecs
-import os.path
-import re
-import sys
-
 from setuptools import find_packages, setup
-
-from awssso import __version__
 
 requires = [
     'awscli',
     'selenium',
     'keyring',
+    'secretstorage; platform_system == "Linux"',
     'PyInquirer',
     'halo'
 ]
@@ -21,7 +15,7 @@ with open('README.md', 'r') as fh:
 
 setup_options = dict(
     name='awssso',
-    version=__version__,
+    use_scm_version=True,
     description='Command Line tool for AWS SSO Credentials',
     long_description=long_description,
     long_description_content_type='text/markdown',
