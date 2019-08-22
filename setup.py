@@ -5,8 +5,9 @@ requires = [
     'awscli',
     'boto3',
     'halo',
-    'keyring',
     'inquirer',
+    'keyring',
+    'requests',
     'secretstorage; platform_system == "Linux"',
     'selenium',
 ]
