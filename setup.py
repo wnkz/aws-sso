@@ -3,11 +3,12 @@ from setuptools import find_packages, setup
 
 requires = [
     'awscli',
-    'selenium',
+    'boto3',
+    'halo',
     'keyring',
+    'inquirer',
     'secretstorage; platform_system == "Linux"',
-    'PyInquirer',
-    'halo'
+    'selenium',
 ]
 
 with open('README.md', 'r') as fh:

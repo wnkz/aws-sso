@@ -3,30 +3,37 @@ import os
 from pathlib import Path
 
 
-class Configuration(object):
+class Configuration():
     def __init__(self, cfg_dir=os.environ.get('AWSSSO_CONFIG_DIR', '~/.awssso')):
-        self._cfg = configparser.ConfigParser()
-        self._cfg_dir = Path(cfg_dir).expanduser()
-        self._make_config_dir()
-        self._cfg_file = Path(f'{self._cfg_dir.resolve()}/config')
-        self._read_config()
+        self._config = configparser.ConfigParser()
+        self._config_dir = Path(cfg_dir).expanduser()
+        self._config_file = Path(f'{self._config_dir.resolve()}/config')
 
-    def _make_config_dir(self):
-        self._cfg_dir.mkdir(exist_ok=True)
+        self.__ensure_config_dir()
+        self.__read()
 
-    def _read_config(self):
-        self._cfg.read(self._cfg_file.resolve())
+    def __ensure_config_dir(self):
+        self._config_dir.mkdir(exist_ok=True)
 
-    def read_section(self, section):
-        try:
-            return self._cfg[section]
-        except KeyError:
-            return {}
+    def __read(self):
+        self._config.read(self._config_file.resolve())
 
-    def write_section(self, section, cfg):
-        self._cfg[section] = cfg
-        with self._cfg_file.open('w') as f:
-            self._cfg.write(f)
+    @property
+    def configfile(self):
+        return self._config_file
 
-    def config_dir(self):
-        return self._cfg_dir.resolve()
+    @property
+    def configdir(self):
+        return self._config_dir.resolve()
+
+    @property
+    def config(self):
+        return self._config
+
+    @config.setter
+    def config(self, cfg):
+        self._config = cfg
+
+    def save(self):
+        with self._config_file.open('w') as f:
+            self._config.write(f)

@@ -8,9 +8,11 @@ autopep8 = "*"
 twine = "*"
 setuptools = "*"
 wheel = "*"
+pylint = "*"
 
 [packages]
 awssso = {editable = true,path = "."}
+requests = "*"
 
 [requires]
 python_version = "3.7"

@@ -1,222 +1,150 @@
 import argparse
 import os
-import subprocess
+import sys
+from time import time
 
-import keyring
+import inquirer
 from halo import Halo
-from PyInquirer import print_json, prompt
 
 from awssso import __version__
 from awssso.config import Configuration
-from awssso.ssodriver import SSODriver
+from awssso.helpers import (SPINNER_MSGS, CredentialsHelper, SAMLHelper,
+                            SecretsManager, config_override,
+                            validate_empty, validate_url)
+from awssso.ssoclient import SSOClient
+from awssso.ssodriver import MFACodeNeeded, SSODriver
 
-SPINNER_MSGS = {
-    'launch_browser': 'Starting web browser',
-    'url_get': 'Loading URL',
-    'sign_in': 'Signing in',
-    'mfa_check': 'Checking for MFA',
-    'mfa_needed': 'MFA code needed',
-    'mfa_send': 'Sending MFA code',
-    'ls_apps': 'Listing applications',
-    'ls_aws_accts': 'Listing AWS Accounts for',
-    'ls_aws_pf': 'Listing AWS Profiles for',
-    'pwd_save': 'Saving password',
-    'cfg_save': 'Saving configuration',
-    'cfg_success': 'Successfully configured profile',
-    'creds_get': 'Getting credentials',
-    'creds_set': 'Setting credentials',
-    'creds_success': 'Successfully set credentials'
-}
+
+def __refresh_token(url, username, password, config_dir, headless=True, spinner=True):
+    spinner = Halo(enabled=spinner)
+    try:
+        spinner.start(SPINNER_MSGS['token_refresh'])
+        driver = SSODriver(url, username, headless=headless, cookie_dir=config_dir)
+        try:
+            return driver.refresh_token(username, password)
+        except MFACodeNeeded as e:
+            spinner.stop()
+            mfacode = inquirer.text(message='MFA Code')
+            spinner.start(SPINNER_MSGS['mfa_send'])
+            driver.send_mfa(e.mfa_form, mfacode)
+            spinner.start(SPINNER_MSGS['token_refresh'])
+            return driver.get_token()
+        finally:
+            spinner.stop()
+    except KeyboardInterrupt as e:
+        spinner.stop()
+        raise e
+    finally:
+        driver.close()
+
+
+def __get_or_refresh_token(url, username, password, secrets, config_dir, force_refresh=False, headless=True, spinner=True):
+    token = secrets.get('authn-token')
+    expiry_date = int(secrets.get('authn-expiry-date', '0'))
+    if force_refresh or not token or time() > expiry_date:
+        token, expiry_date = __refresh_token(url, username, password, config_dir, headless, spinner)
+        if secrets.get('credentials') != password:
+            secrets.set('credentials', password)
+        secrets.set('authn-token', token)
+        secrets.set('authn-expiry-date', str(expiry_date))
+    return token
 
 
 def configure(args):
-    configuration = Configuration()
-    config = configuration.read_section(args.profile)
-    keyring_service_name = f'awssso-{args.profile}'
-    cookies_file = f'{configuration.config_dir()}/{args.profile}-cookies.pkl'
-    spinner = Halo(enabled=args.no_spinner)
-
-    questions = [
-        {
-            'type': 'input',
-            'name': 'url',
-            'message': 'URL',
-            'default': args.url or config.get('url', '')
-        },
-        {
-            'type': 'input',
-            'name': 'username',
-            'message': 'Username',
-            'default': args.username or config.get('username', '')
-        },
-        {
-            'type': 'password',
-            'name': 'password',
-            'message': 'Password',
-            'default': keyring.get_password(keyring_service_name, args.username) or ''
-        },
-        {
-            'type': 'input',
-            'name': 'aws_profile',
-            'message': 'AWS CLI Profile',
-            'default': args.aws_profile or config.get('aws_profile', args.profile)
-        }
-    ]
-
-    answers = prompt(questions)
+    profile = args.profile
+    cfg = Configuration()
+    params = config_override(cfg.config, profile, args)
 
     try:
-        spinner.start(SPINNER_MSGS['launch_browser'])
-        driver = SSODriver(headless=args.no_headless, cookies_file=cookies_file)
+        inquirer.prompt([
+            inquirer.Text('url', message='URL', default=params.get('url', ''), validate=validate_url),
+            inquirer.Text('aws_profile', message='AWS CLI profile', default=params.get('aws_profile', profile), validate=validate_empty),
+            inquirer.Text('username', message='Username', default=params.get('username', ''), validate=validate_empty)
+        ], answers=params, raise_keyboard_interrupt=True)
+        secrets = SecretsManager(params.get('username'), params.get('url'))
+        password = inquirer.password(message='Password', default=secrets.get('credentials', ''), validate=validate_empty)
 
-        spinner.start(SPINNER_MSGS['url_get'])
-        driver.get(answers['url'])
+        token = __get_or_refresh_token(
+            params['url'], params['username'], password,
+            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
+        )
+        sso = SSOClient(token, params['region'])
 
-        spinner.start(SPINNER_MSGS['sign_in'])
-        driver.login(answers['username'], answers['password'])
+        instances = sso.get_instances()
+        inquirer.prompt([
+            inquirer.List(
+                'instance_id',
+                message='AWS Account',
+                choices=[(_['name'], _['id']) for _ in instances]
+            )
+        ], answers=params, raise_keyboard_interrupt=True)
 
-        spinner.start(SPINNER_MSGS['mfa_check'])
-        mfa = driver.check_mfa()
+        profiles = sso.get_profiles(params['instance_id'])
+        inquirer.prompt([
+            inquirer.List(
+                'profile_id',
+                message='AWS Profile',
+                choices=[(_['name'], _['id']) for _ in profiles]
+            )
+        ], answers=params, raise_keyboard_interrupt=True)
 
-        if mfa:
-            spinner.info(SPINNER_MSGS['mfa_needed'])
-            mfacode = prompt({
-                'type': 'input',
-                'name': 'mfacode',
-                'message': 'MFA',
-            })['mfacode']
-            spinner.start(SPINNER_MSGS['mfa_send'])
-            driver.send_mfa(mfa, mfacode)
-
-        default_app_id = args.app_id or config.get('app_id')
-        spinner.start(SPINNER_MSGS['ls_apps'])
-        app_ids = driver.get_applications()
-        spinner.stop()
-        app_id = prompt({
-            'type': 'list',
-            'name': 'app_id',
-            'message': 'Application ID',
-            'choices': app_ids,
-            'default': default_app_id or 0
-        })['app_id']
-
-        answers['app_id'] = app_id
-        spinner.start(f'{SPINNER_MSGS["ls_aws_accts"]} {answers["app_id"]}')
-        accounts = driver.get_accounts(answers['app_id'])
-        spinner.stop()
-
-        instance_name = prompt({
-            'type': 'list',
-            'name': 'aws_account',
-            'message': 'AWS Account',
-            'choices': [_ for _ in accounts]
-        })['aws_account']
-        instance_id = accounts[instance_name]
-
-        spinner.start(f'{SPINNER_MSGS["ls_aws_pf"]} {instance_name} ({instance_id})')
-        profiles = driver.get_profiles(instance_id)
-        spinner.stop()
-
-        profile_name = prompt({
-            'type': 'list',
-            'name': 'aws_profile',
-            'message': 'AWS Profile',
-            'choices': [_ for _ in profiles]
-        })['aws_profile']
-        profile_id = profiles[profile_name]
-
-        spinner.start(SPINNER_MSGS['pwd_save'])
-        keyring.set_password(keyring_service_name, answers['username'], answers.pop('password'))
-
-        updated_config = {}
-        updated_config.update(answers)
-        updated_config.update({
-            'instance_id': instance_id,
-            'profile_id': profile_id
-        })
-
-        spinner.start(SPINNER_MSGS['cfg_save'])
-        configuration.write_section(args.profile, updated_config)
-
-        spinner.succeed(f'{SPINNER_MSGS["cfg_success"]} {args.profile}')
-    except (KeyboardInterrupt, SystemExit):
-        spinner.stop()
-    finally:
-        driver.close()
+        cfg.save()
+    except KeyboardInterrupt:
+        sys.exit(1)
 
 
 def login(args):
-    configuration = Configuration()
-    config = configuration.read_section(args.profile)
-    keyring_service_name = f'awssso-{args.profile}'
-    cookies_file = f'{configuration.config_dir()}/{args.profile}-cookies.pkl'
-    spinner = Halo(enabled=args.no_spinner)
+    profile = args.profile
+    cfg = Configuration()
+    params = config_override(cfg.config, profile, args)
+    aws_profile = params.get('aws_profile', profile)
+    secrets = SecretsManager(params.get('username'), params.get('url'))
+    password = secrets.get('credentials')
 
-    url = config.get('url')
-    username = config.get('username')
-    password = keyring.get_password(keyring_service_name, username)
-    app_id = config.get('app_id')
-    instance_id = config.get('instance_id')
-    profile_id = config.get('profile_id')
+    token = __get_or_refresh_token(
+        params['url'], params['username'], password,
+        secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
+    )
+    sso = SSOClient(token, params['region'])
+    payload = sso.get_saml_payload(params['instance_id'], params['profile_id'])
+    credentials = SAMLHelper(payload).assume_role(args.duration)['Credentials']
 
-    try:
-        spinner.start(SPINNER_MSGS['launch_browser'])
-        driver = SSODriver(headless=args.no_headless, cookies_file=cookies_file)
+    ch = CredentialsHelper(credentials)
+    if args.export:
+        print(ch.configure_export())
+    else:
+        ch.configure_cli(aws_profile)
 
-        spinner.start(SPINNER_MSGS['url_get'])
-        driver.get(url)
 
-        spinner.start(SPINNER_MSGS['sign_in'])
-        driver.login(username, password)
-
-        spinner.start(SPINNER_MSGS['mfa_check'])
-        mfa = driver.check_mfa()
-        if mfa:
-            spinner.info(SPINNER_MSGS['mfa_needed'])
-            mfacode = prompt({
-                'type': 'input',
-                'name': 'mfacode',
-                'message': 'MFA',
-            })['mfacode']
-            spinner.start(SPINNER_MSGS['mfa_send'])
-            driver.send_mfa(mfa, mfacode)
-
-        spinner.start(SPINNER_MSGS['creds_get'])
-        credentials = driver.get_credentials(app_id, instance_id, profile_id)
-
-        spinner.start(SPINNER_MSGS['creds_set'])
-        for _ in credentials:
-            subprocess.run([
-                'aws', 'configure',
-                '--profile', args.aws_profile or config.get('aws_profile'),
-                'set', _, credentials[_]
-            ])
-
-        spinner.succeed(SPINNER_MSGS['creds_success'])
-    except (KeyboardInterrupt, SystemExit):
-        spinner.stop()
-    finally:
-        driver.close()
-
+class DurationAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        if values < 900:
+            parser.error(f'argument {option_string}: minimum value is 900')
+        setattr(namespace, self.dest, values)
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--version', action='version', version=__version__)
-    parser.add_argument('--no-headless', action='store_false', default=True, help='show web browser')
-    parser.add_argument('--no-spinner', action='store_false', default=True, help='disable all spinners')
+    parser.add_argument('--region', default=os.environ.get('AWS_DEFAULT_REGION', 'eu-west-1'))
+    parser.add_argument('--no-headless', dest='headless', action='store_false', default=True, help='show web browser')
+    parser.add_argument('--no-spinner', dest='spinner', action='store_false', default=True, help='disable all spinners')
     subparsers = parser.add_subparsers()
 
     configure_parser = subparsers.add_parser('configure')
-    configure_parser.add_argument('--profile', default='default', help='AWS SSO Profile (default: default)')
     configure_parser.add_argument('--url')
     configure_parser.add_argument('--username')
     configure_parser.add_argument('--app-id')
+    configure_parser.add_argument('-p', '--profile', default='default', help='AWS SSO Profile (default: default)')
     configure_parser.add_argument('--aws-profile', help='AWS CLI Profile (default: same as --profile)')
+    configure_parser.add_argument('-f', '--force-refresh', action='store_true', default=False)
     configure_parser.set_defaults(func=configure)
 
     login_parser = subparsers.add_parser('login')
-    login_parser.add_argument('--profile', default='default')
+    login_parser.add_argument('-p', '--profile', default='default', help='AWS SSO Profile (default: default)')
     login_parser.add_argument('--aws-profile', help='override configured AWS CLI Profile')
+    login_parser.add_argument('-d', '--duration', action=DurationAction, type=int, help='Duration (seconds) of the role session (default/maximum: from SAML payload, minimum: 900)')
+    login_parser.add_argument('-e', '--export', action='store_true', default=False)
+    login_parser.add_argument('-f', '--force-refresh', action='store_true', default=False)
     login_parser.set_defaults(func=login)
 
     args = parser.parse_args()
