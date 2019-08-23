@@ -43,7 +43,8 @@ setup_options = dict(
         'License :: OSI Approved :: Apache Software License',
 
         'Programming Language :: Python :: 3.7'
-    ]
+    ],
+    keywords=['aws', 'sso', 'cloud', 'cli', 'credentials']
 )
 
 setup(**setup_options)

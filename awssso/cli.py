@@ -8,9 +8,9 @@ from halo import Halo
 
 from awssso import __version__
 from awssso.config import Configuration
-from awssso.helpers import (SPINNER_MSGS, CredentialsHelper, SAMLHelper,
-                            SecretsManager, config_override,
-                            validate_empty, validate_url)
+from awssso.helpers import (SPINNER_MSGS, CredentialsHelper, SecretsManager,
+                            config_override, validate_empty, validate_url)
+from awssso.saml import AssumeRoleValidationError, BotoClientError, SAMLHelper
 from awssso.ssoclient import SSOClient
 from awssso.ssodriver import MFACodeNeeded, SSODriver
 
@@ -96,24 +96,33 @@ def configure(args):
 def login(args):
     profile = args.profile
     cfg = Configuration()
+
+    if profile not in cfg.config:
+        sys.exit(f'profile {profile} does not exist, use "awssso configure -p {profile}" to create it')
+
     params = config_override(cfg.config, profile, args)
     aws_profile = params.get('aws_profile', profile)
     secrets = SecretsManager(params.get('username'), params.get('url'))
     password = secrets.get('credentials')
 
-    token = __get_or_refresh_token(
-        params['url'], params['username'], password,
-        secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
-    )
-    sso = SSOClient(token, params['region'])
-    payload = sso.get_saml_payload(params['instance_id'], params['profile_id'])
-    credentials = SAMLHelper(payload).assume_role(args.duration)['Credentials']
+    try:
+        token = __get_or_refresh_token(
+            params['url'], params['username'], password,
+            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
+        )
+        sso = SSOClient(token, params['region'])
+        payload = sso.get_saml_payload(params['instance_id'], params['profile_id'])
+        credentials = SAMLHelper(payload).assume_role(args.duration)['Credentials']
 
-    ch = CredentialsHelper(credentials)
-    if args.export:
-        print(ch.configure_export())
-    else:
-        ch.configure_cli(aws_profile)
+        ch = CredentialsHelper(credentials)
+        if args.export:
+            print(ch.configure_export())
+        else:
+            ch.configure_cli(aws_profile)
+    except (AssumeRoleValidationError, BotoClientError) as e:
+        sys.exit(f'{e} (request id: {e.request_id})')
+    except KeyboardInterrupt:
+        sys.exit(1)
 
 
 class DurationAction(argparse.Action):

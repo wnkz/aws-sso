@@ -1,10 +1,7 @@
 import re
 import subprocess
-import xml.etree.ElementTree as ET
-from base64 import b64decode
 from urllib.parse import urlparse
 
-import boto3
 import keyring
 from inquirer.errors import ValidationError
 
@@ -12,6 +9,7 @@ SPINNER_MSGS = {
     'token_refresh': 'Refreshing token',
     'mfa_send': 'Sending MFA code'
 }
+
 
 class SecretsManager():
     def __init__(self, username, url):
@@ -30,6 +28,7 @@ class SecretsManager():
             self._username,
             password
         )
+
 
 class CredentialsHelper():
     CNAMES = {
@@ -67,40 +66,6 @@ class CredentialsHelper():
                 exports.append(export)
         return '\n'.join(exports)
 
-class SAMLHelper():
-    NS = {
-        'a': 'urn:oasis:names:tc:SAML:2.0:assertion'
-    }
-
-    XPATH = {
-        'roles': ".//a:Assertion/a:AttributeStatement/a:Attribute[@Name='https://aws.amazon.com/SAML/Attributes/Role']/a:AttributeValue",
-        'duration': ".//a:Assertion/a:AttributeStatement/a:Attribute[@Name='https://aws.amazon.com/SAML/Attributes/SessionDuration']/a:AttributeValue"
-    }
-
-    def __init__(self, encoded_payload):
-        self._sts = boto3.client('sts')
-        self._root = ET.fromstring(b64decode(encoded_payload))
-        self._role_arn, self._principal_arn = self._get_roles()
-        self._duration = self._get_duration()
-        self._payload = encoded_payload
-
-    def _get_roles(self):
-        e = self._root.find(SAMLHelper.XPATH['roles'], SAMLHelper.NS)
-        return tuple(e.text.split(','))
-
-    def _get_duration(self):
-        e = self._root.find(SAMLHelper.XPATH['duration'], SAMLHelper.NS)
-        return int(e.text)
-
-    def assume_role(self, duration=None):
-        duration = duration or self._duration
-        return self._sts.assume_role_with_saml(
-            RoleArn=self._role_arn,
-            PrincipalArn=self._principal_arn,
-            SAMLAssertion=self._payload,
-            DurationSeconds=duration
-        )
-
 
 def config_override(config, section, args, keep=['url', 'region', 'username', 'aws_profile']):
     if section not in config:
@@ -119,6 +84,7 @@ def validate_url(answers, url):
     if re.match(rx, url) is None:
         raise ValidationError('', reason=f'URL must match {rx}')
     return True
+
 
 def validate_empty(answers, s):
     if not s:
