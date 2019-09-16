@@ -1,6 +1,8 @@
 # aws-sso
 
+[![GitHub Actions status](https://github.com/wnkz/aws-sso/workflows/Python%20package/badge.svg)](https://github.com/wnkz/aws-sso)
 [![PyPi Version](https://img.shields.io/pypi/v/awssso.svg?style=flat)](https://pypi.python.org/pypi/awssso/)
+
 
 This package provides a command line interface to get AWS credentials with [AWS SSO](https://aws.amazon.com/single-sign-on/).
 
