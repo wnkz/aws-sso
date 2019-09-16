@@ -32,6 +32,7 @@ class AssumeRoleValidationError(BotoClientError):
 
     pass
 
+
 class SAMLHelper():
     NS = {
         'a': 'urn:oasis:names:tc:SAML:2.0:assertion'
@@ -48,6 +49,10 @@ class SAMLHelper():
         self._role_arn, self._principal_arn = self._get_roles()
         self._duration = self._get_duration()
         self._payload = encoded_payload
+
+    @property
+    def duration(self):
+        return self._duration
 
     def _get_roles(self):
         e = self._root.find(SAMLHelper.XPATH['roles'], SAMLHelper.NS)

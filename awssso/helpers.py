@@ -1,8 +1,10 @@
+import json
 import re
 import subprocess
 from urllib.parse import urlparse
 
 import keyring
+import requests
 from inquirer.errors import ValidationError
 
 SPINNER_MSGS = {
@@ -34,15 +36,18 @@ class CredentialsHelper():
     CNAMES = {
         'AccessKeyId': {
             'awscli': 'aws_access_key_id',
-            'env': 'AWS_ACCESS_KEY_ID'
+            'env': 'AWS_ACCESS_KEY_ID',
+            'console': 'sessionId'
         },
         'SecretAccessKey': {
             'awscli': 'aws_secret_access_key',
-            'env': 'AWS_SECRET_ACCESS_KEY'
+            'env': 'AWS_SECRET_ACCESS_KEY',
+            'console': 'sessionKey'
         },
         'SessionToken': {
             'awscli': 'aws_session_token',
-            'env': 'AWS_SESSION_TOKEN'
+            'env': 'AWS_SESSION_TOKEN',
+            'console': 'sessionToken'
         }
     }
 
@@ -65,6 +70,33 @@ class CredentialsHelper():
                 export = f'export {CredentialsHelper.CNAMES[_]["env"]}={self._credentials[_]}'
                 exports.append(export)
         return '\n'.join(exports)
+
+    def console_signin(self, duration):
+        session = {}
+        for _ in self._credentials:
+            if _ in CredentialsHelper.CNAMES:
+                session.update({
+                    CredentialsHelper.CNAMES[_]['console']: self._credentials[_]
+                })
+
+        params = {
+            'Action': 'getSigninToken',
+            'Session': json.dumps(session),
+            'SessionDuration': duration
+        }
+        response = requests.get('https://signin.aws.amazon.com/federation', params=params)
+
+        login_request = requests.Request(
+            'GET',
+            'https://signin.aws.amazon.com/federation',
+            params={
+                'Action': 'login',
+                'Destination': 'https://console.aws.amazon.com/',
+                'SigninToken': response.json()['SigninToken']
+            }
+        ).prepare()
+
+        return login_request.url
 
 
 def config_override(config, section, args, keep=['url', 'region', 'username', 'aws_profile']):
