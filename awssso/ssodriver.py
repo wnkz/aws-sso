@@ -22,6 +22,10 @@ class Error(Exception):
     __str__ = __repr__
 
 
+class AlertMessage(Error):
+    """Raised when alert frame is displayed."""
+    pass
+
 class MFACodeNeeded(Error):
     """Raised when MFA code is needed."""
 
@@ -88,9 +92,8 @@ class SSODriver():
         try:
             return self.get_token(restore)
         except TimeoutException:
-            mfa = self.check_mfa()
-            if mfa:
-                raise MFACodeNeeded(mfa)
+            self.check_alert()
+            self.check_mfa()
 
     def get_token(self, restore=False):
         WebDriverWait(self._driver, 1, poll_frequency=self._poll_frequency).until(
@@ -124,13 +127,23 @@ class SSODriver():
         el_password.send_keys(password)
         el_signin.click()
 
+    def check_alert(self):
+        try:
+            wait = WebDriverWait(self._driver, 1, poll_frequency=self._poll_frequency)
+            alert = wait.until(EC.presence_of_element_located((By.ID, 'alertFrame')))
+            error = alert.find_element_by_css_selector('div.a-alert-error > div.a-box-inner > h4').text
+            message = alert.find_element_by_css_selector('div.a-alert-error > div.a-box-inner > div.gwt-Label').text
+            raise AlertMessage(f'{error}: {message}')
+        except TimeoutException:
+            pass
+
     def check_mfa(self):
         try:
             wait = WebDriverWait(self._driver, 1, poll_frequency=self._poll_frequency)
             mfa = wait.until(EC.presence_of_element_located((By.ID, 'mfa_form')))
-            return mfa
-        except TimeoutException :
-            return False
+            raise MFACodeNeeded(mfa)
+        except TimeoutException:
+            pass
 
     def send_mfa(self, mfa_form, mfacode, trusted_device=True):
         el_mfacode = self._find_element_by_id('wdc_mfacode', mfa_form)

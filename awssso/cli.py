@@ -13,7 +13,7 @@ from awssso.helpers import (SPINNER_MSGS, CredentialsHelper, SecretsManager,
                             config_override, validate_empty, validate_url)
 from awssso.saml import AssumeRoleValidationError, BotoClientError, SAMLHelper
 from awssso.ssoclient import SSOClient
-from awssso.ssodriver import MFACodeNeeded, SSODriver
+from awssso.ssodriver import AlertMessage, MFACodeNeeded, SSODriver
 
 
 def __refresh_token(url, username, password, config_dir, headless=True, spinner=True):
@@ -30,6 +30,8 @@ def __refresh_token(url, username, password, config_dir, headless=True, spinner=
             driver.send_mfa(e.mfa_form, mfacode)
             spinner.start(SPINNER_MSGS['token_refresh'])
             return driver.get_token()
+        except AlertMessage as e:
+            sys.exit(e)
         finally:
             spinner.stop()
     except KeyboardInterrupt as e:
@@ -41,10 +43,11 @@ def __refresh_token(url, username, password, config_dir, headless=True, spinner=
 
 def __get_or_refresh_token(url, username, password, secrets, config_dir, force_refresh=False, headless=True, spinner=True):
     token = secrets.get('authn-token')
+    stored_password = secrets.get('credentials')
     expiry_date = int(secrets.get('authn-expiry-date', '0'))
-    if force_refresh or not token or time() > expiry_date:
+    if (force_refresh) or (not token) or (time() > expiry_date) or (stored_password != password):
         token, expiry_date = __refresh_token(url, username, password, config_dir, headless, spinner)
-        if secrets.get('credentials') != password:
+        if stored_password != password:
             secrets.set('credentials', password)
         secrets.set('authn-token', token)
         secrets.set('authn-expiry-date', str(expiry_date))
@@ -105,6 +108,9 @@ def login(args):
     aws_profile = params.get('aws_profile', profile)
     secrets = SecretsManager(params.get('username'), params.get('url'))
     password = secrets.get('credentials')
+
+    if not password:
+        sys.exit(f'Cannot get password from secrets, run "awssso configure -p {profile}"')
 
     try:
         token = __get_or_refresh_token(
