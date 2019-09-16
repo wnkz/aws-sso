@@ -1,6 +1,7 @@
 import argparse
 import os
 import sys
+import webbrowser
 from time import time
 
 import inquirer
@@ -111,12 +112,40 @@ def login(args):
             secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
         )
         sso = SSOClient(token, params['region'])
+
+        if args.interactive:
+            instances = sso.get_instances()
+            inquirer.prompt([
+                inquirer.List(
+                    'instance_id',
+                    message='AWS Account',
+                    choices=[(_['name'], _['id']) for _ in instances]
+                )
+            ], answers=params, raise_keyboard_interrupt=True)
+
+            profiles = sso.get_profiles(params['instance_id'])
+            inquirer.prompt([
+                inquirer.List(
+                    'profile_id',
+                    message='AWS Profile',
+                    choices=[(_['name'], _['id']) for _ in profiles]
+                )
+            ], answers=params, raise_keyboard_interrupt=True)
+
         payload = sso.get_saml_payload(params['instance_id'], params['profile_id'])
-        credentials = SAMLHelper(payload).assume_role(args.duration)['Credentials']
+        saml = SAMLHelper(payload)
+        credentials = saml.assume_role(args.duration)['Credentials']
 
         ch = CredentialsHelper(credentials)
+
         if args.export:
             print(ch.configure_export())
+        elif args.console:
+            session_duration = args.duration or saml.duration
+            signin_url = ch.console_signin(session_duration)
+            print(signin_url)
+            if args.browser:
+                webbrowser.open_new_tab(signin_url)
         else:
             ch.configure_cli(aws_profile)
     except (AssumeRoleValidationError, BotoClientError) as e:
@@ -130,6 +159,7 @@ class DurationAction(argparse.Action):
         if values < 900:
             parser.error(f'argument {option_string}: minimum value is 900')
         setattr(namespace, self.dest, values)
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -151,10 +181,20 @@ def main():
     login_parser = subparsers.add_parser('login')
     login_parser.add_argument('-p', '--profile', default='default', help='AWS SSO Profile (default: default)')
     login_parser.add_argument('--aws-profile', help='override configured AWS CLI Profile')
-    login_parser.add_argument('-d', '--duration', action=DurationAction, type=int, help='Duration (seconds) of the role session (default/maximum: from SAML payload, minimum: 900)')
-    login_parser.add_argument('-e', '--export', action='store_true', default=False)
+    login_parser.add_argument('-d', '--duration', action=DurationAction, type=int, help='duration (seconds) of the role session (default/maximum: from SAML payload, minimum: 900)')
+    login_parser_group = login_parser.add_mutually_exclusive_group()
+    login_parser_group.add_argument('-e', '--export', action='store_true', default=False, help='outputs credentials as environment variables')
+    login_parser_group.add_argument('-c', '--console', action='store_true', default=False, help='outputs AWS Console Sign In url')
+    login_parser.add_argument('--browser', action='store_true', default=False, help='opens web browser with AWS Console Sign In url')
+    login_parser.add_argument('-i', '--interactive', action='store_true', default=False, help='lets you interactively choose AWS account and role')
     login_parser.add_argument('-f', '--force-refresh', action='store_true', default=False)
     login_parser.set_defaults(func=login)
 
     args = parser.parse_args()
-    args.func(args)
+
+    try:
+        func = args.func
+        if callable(func):
+            func(args)
+    except AttributeError:
+        parser.print_help(sys.stderr)
