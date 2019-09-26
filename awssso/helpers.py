@@ -71,6 +71,16 @@ class CredentialsHelper():
                 exports.append(export)
         return '\n'.join(exports)
 
+    def configure_json(self):
+        export = {
+            **self._credentials,
+            **{
+                'Version': 1,
+                'Expiration': self._credentials['Expiration'].isoformat()
+            }
+        }
+        return json.dumps(export)
+
     def console_signin(self, duration):
         session = {}
         for _ in self._credentials:

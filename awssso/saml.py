@@ -43,8 +43,9 @@ class SAMLHelper():
         'duration': ".//a:Assertion/a:AttributeStatement/a:Attribute[@Name='https://aws.amazon.com/SAML/Attributes/SessionDuration']/a:AttributeValue"
     }
 
-    def __init__(self, encoded_payload):
-        self._sts = boto3.client('sts')
+    def __init__(self, aws_profile, encoded_payload):
+        self._session = boto3.Session(profile_name=aws_profile)
+        self._sts = self._session.client('sts')
         self._root = ET.fromstring(b64decode(encoded_payload))
         self._role_arn, self._principal_arn = self._get_roles()
         self._duration = self._get_duration()
