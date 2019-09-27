@@ -146,6 +146,8 @@ def login(args):
 
         if args.export:
             print(ch.configure_export())
+        elif args.json:
+            print(ch.configure_json())
         elif args.console:
             session_duration = args.duration or saml.duration
             signin_url = ch.console_signin(session_duration)
@@ -196,6 +198,7 @@ def main():
     login_parser.add_argument('-d', '--duration', action=DurationAction, type=int, help='duration (seconds) of the role session (default/maximum: from SAML payload, minimum: 900)')
     login_parser_group = login_parser.add_mutually_exclusive_group()
     login_parser_group.add_argument('-e', '--export', action='store_true', default=False, help='output credentials as environment variables')
+    login_parser_group.add_argument('-j', '--json', action='store_true', default=False, help='output credentials in JSON format (see https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sourcing-external.html)')
     login_parser_group.add_argument('-c', '--console', action='store_true', default=False, help='output AWS Console Sign In url')
     login_parser.add_argument('-b', '--browser', action='store_true', default=False, help='open web browser with AWS Console Sign In url')
     login_parser.add_argument('-i', '--interactive', action='store_true', default=False, help='interactively choose AWS account and role')

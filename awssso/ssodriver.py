@@ -2,7 +2,7 @@ import pickle
 from hashlib import sha256
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -134,7 +134,7 @@ class SSODriver():
             error = alert.find_element_by_css_selector('div.a-alert-error > div.a-box-inner > h4').text
             message = alert.find_element_by_css_selector('div.a-alert-error > div.a-box-inner > div.gwt-Label').text
             raise AlertMessage(f'{error}: {message}')
-        except TimeoutException:
+        except (TimeoutException, NoSuchElementException):
             pass
 
     def check_mfa(self):
