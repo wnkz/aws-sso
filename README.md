@@ -1,7 +1,10 @@
 # aws-sso
 
 [![GitHub Actions status](https://github.com/wnkz/aws-sso/workflows/Python%20package/badge.svg)](https://github.com/wnkz/aws-sso)
+[![GitHub Actions status](https://github.com/wnkz/aws-sso/workflows/Upload%20Python%20Package/badge.svg)](https://github.com/wnkz/aws-sso)
 [![PyPi Version](https://img.shields.io/pypi/v/awssso.svg?style=flat)](https://pypi.python.org/pypi/awssso/)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/awssso)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/awssso)
 
 
 This package provides a command line interface to get AWS credentials with [AWS SSO](https://aws.amazon.com/single-sign-on/).
@@ -108,6 +111,23 @@ https://signin.aws.amazon.com/federation?Action=login&Destination=https%3A%2F%2F
 
 This will generate a Sign In URL to the AWS Console ; URL will open in a new tab if used with `--browser`.
 
+---
+
+You can also use this tool as a [credential_process](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sourcing-external.html) for awscli. To do so, configure your awscli configuration file like so:
+
+```
+[profile my-sso-profile]
+credential_process = awssso login -p my-awssso-profile --json
+```
+
+And then simply use awscli normally:
+
+```
+$ aws --profile my-sso-profile s3 ls
+```
+
+⚠️ This will make a new STS call for each awscli command until caching is implemented.
+
 ## Base concepts
 
 aws-sso has its own configuration file (`~/.awssso/config`).  
@@ -129,3 +149,7 @@ aws-sso doesn't make new login attempts until authn-token is expired.
 ## Releases
 
 The release notes for AWS SSO can be found [here](CHANGELOG.md).
+
+## Known issues
+
+Known issues can be found [here](KNOWNISSUES.md).

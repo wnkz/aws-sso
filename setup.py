@@ -33,7 +33,9 @@ setup_options = dict(
     install_requires=requires,
     license='Apache License 2.0',
     classifiers=[
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 5 - Production/Stable',
+
+        'Environment :: Console',
 
         'Intended Audience :: Developers',
         'Intended Audience :: System Administrators',
@@ -41,6 +43,9 @@ setup_options = dict(
         'Natural Language :: English',
 
         'License :: OSI Approved :: Apache Software License',
+
+        'Operating System :: MacOS',
+        'Operating System :: POSIX'
 
         'Programming Language :: Python :: 3.7'
     ],
