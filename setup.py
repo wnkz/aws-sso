@@ -45,7 +45,7 @@ setup_options = dict(
         'License :: OSI Approved :: Apache Software License',
 
         'Operating System :: MacOS',
-        'Operating System :: POSIX'
+        'Operating System :: POSIX',
 
         'Programming Language :: Python :: 3.7'
     ],
