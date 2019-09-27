@@ -139,7 +139,7 @@ def login(args):
             ], answers=params, raise_keyboard_interrupt=True)
 
         payload = sso.get_saml_payload(params['instance_id'], params['profile_id'])
-        saml = SAMLHelper(aws_profile, payload)
+        saml = SAMLHelper(payload)
         credentials = saml.assume_role(args.duration)['Credentials']
 
         ch = CredentialsHelper(credentials)

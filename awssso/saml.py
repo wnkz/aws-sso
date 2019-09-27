@@ -43,9 +43,11 @@ class SAMLHelper():
         'duration': ".//a:Assertion/a:AttributeStatement/a:Attribute[@Name='https://aws.amazon.com/SAML/Attributes/SessionDuration']/a:AttributeValue"
     }
 
-    def __init__(self, aws_profile, encoded_payload):
-        self._session = boto3.Session(profile_name=aws_profile)
-        self._sts = self._session.client('sts')
+    def __init__(self, encoded_payload):
+        # Calling AssumeRoleWithSAML does not require the use of AWS security credentials.
+        # The identity of the caller is validated by using keys in the metadata document that is uploaded for the SAML provider entity for your identity provider.
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sts.html#STS.Client.assume_role_with_saml
+        self._sts = boto3.client('sts', aws_access_key_id='', aws_secret_access_key='', aws_session_token='')
         self._root = ET.fromstring(b64decode(encoded_payload))
         self._role_arn, self._principal_arn = self._get_roles()
         self._duration = self._get_duration()
