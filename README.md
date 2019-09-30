@@ -126,8 +126,6 @@ And then simply use awscli normally:
 $ aws --profile my-sso-profile s3 ls
 ```
 
-⚠️ This will make a new STS call for each awscli command until caching is implemented.
-
 ## Base concepts
 
 aws-sso has its own configuration file (`~/.awssso/config`).  
@@ -144,7 +142,8 @@ For each username / url aws-sso stores three secrets:
 * authn-token
 * authn-expiry-date
 
-aws-sso doesn't make new login attempts until authn-token is expired.
+aws-sso doesn't make new login attempts until authn-token is expired.  
+aws-sso also stores credentials using keyring to avoid making too many STS calls.
 
 ## Releases
 

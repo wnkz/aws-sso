@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## Unreleased
+
+* Credentials are now cached using keyring. When using login, you can provide `-r` option to force credentials renew.
+
 ## 1.1.0 (2019-09-27)
 
 * JSON login option to support [Sourcing Credentials with an External Process](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sourcing-external.html) with awscli (thanks [@ajkerrigan](https://github.com/ajkerrigan))
