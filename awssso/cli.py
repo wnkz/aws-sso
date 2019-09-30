@@ -1,5 +1,7 @@
 import argparse
+import json
 import os
+import subprocess
 import sys
 import webbrowser
 from time import time
@@ -138,24 +140,30 @@ def login(args):
                 )
             ], answers=params, raise_keyboard_interrupt=True)
 
-        payload = sso.get_saml_payload(params['instance_id'], params['profile_id'])
-        saml = SAMLHelper(payload)
-        credentials = saml.assume_role(args.duration)['Credentials']
+        cache_key = f"{params['instance_id']}.{params['profile_id']}.credentials"
+        cached_credentials = secrets.get(cache_key)
 
-        ch = CredentialsHelper(credentials)
+        if cached_credentials:
+            credentials = CredentialsHelper(json.loads(cached_credentials))
+
+        if not cached_credentials or credentials.expired or args.renew:
+            payload = sso.get_saml_payload(params['instance_id'], params['profile_id'])
+            saml = SAMLHelper(payload)
+            credentials = CredentialsHelper(saml.assume_role(args.duration)['Credentials'])
+            secrets.set(cache_key, credentials.json)
 
         if args.export:
-            print(ch.configure_export())
+            print('\n'.join(credentials.to_exports()))
         elif args.json:
-            print(ch.configure_json())
+            print(credentials.to_json())
         elif args.console:
-            session_duration = args.duration or saml.duration
-            signin_url = ch.console_signin(session_duration)
+            signin_url = credentials.to_console_url(args.duration)
             print(signin_url)
             if args.browser:
                 webbrowser.open_new_tab(signin_url)
         else:
-            ch.configure_cli(aws_profile)
+            for cmd in credentials.to_cli_cmds(aws_profile):
+                subprocess.run(cmd)
     except (AssumeRoleValidationError, BotoClientError) as e:
         sys.exit(f'{e} (request id: {e.request_id})')
     except KeyboardInterrupt:
@@ -198,10 +206,12 @@ def main():
     login_parser.add_argument('-d', '--duration', action=DurationAction, type=int, help='duration (seconds) of the role session (default/maximum: from SAML payload, minimum: 900)')
     login_parser_group = login_parser.add_mutually_exclusive_group()
     login_parser_group.add_argument('-e', '--export', action='store_true', default=False, help='output credentials as environment variables')
-    login_parser_group.add_argument('-j', '--json', action='store_true', default=False, help='output credentials in JSON format (see https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sourcing-external.html)')
+    login_parser_group.add_argument('-j', '--json', action='store_true', default=False,
+                                    help='output credentials in JSON format (see https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-sourcing-external.html)')
     login_parser_group.add_argument('-c', '--console', action='store_true', default=False, help='output AWS Console Sign In url')
     login_parser.add_argument('-b', '--browser', action='store_true', default=False, help='open web browser with AWS Console Sign In url')
     login_parser.add_argument('-i', '--interactive', action='store_true', default=False, help='interactively choose AWS account and role')
+    login_parser.add_argument('-r', '--renew', action='store_true', default=False, help='ignore cached credentials and renew them')
     login_parser.set_defaults(func=login)
 
     args = parser.parse_args()
