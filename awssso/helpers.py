@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+from datetime import date, datetime, timezone
 from urllib.parse import urlparse
 
 import keyring
@@ -33,65 +34,95 @@ class SecretsManager():
 
 
 class CredentialsHelper():
-    CNAMES = {
-        'AccessKeyId': {
-            'awscli': 'aws_access_key_id',
-            'env': 'AWS_ACCESS_KEY_ID',
-            'console': 'sessionId'
-        },
-        'SecretAccessKey': {
-            'awscli': 'aws_secret_access_key',
-            'env': 'AWS_SECRET_ACCESS_KEY',
-            'console': 'sessionKey'
-        },
-        'SessionToken': {
-            'awscli': 'aws_session_token',
-            'env': 'AWS_SESSION_TOKEN',
-            'console': 'sessionToken'
-        }
-    }
-
     def __init__(self, credentials):
+        self.credentials = credentials
+
+    @property
+    def credentials(self):
+        return self._credentials
+
+    @property
+    def access_key_id(self):
+        return self.credentials['AccessKeyId']
+
+    @property
+    def secret_access_key(self):
+        return self.credentials['SecretAccessKey']
+
+    @property
+    def session_token(self):
+        return self.credentials['SessionToken']
+
+    @property
+    def json(self):
+        return json.dumps(self.credentials, default=json_serial)
+
+    @property
+    def cli(self):
+        return {
+            'aws_access_key_id': self.access_key_id,
+            'aws_secret_access_key': self.secret_access_key,
+            'aws_session_token': self.session_token
+        }
+
+    @property
+    def env(self):
+        return {
+            'AWS_ACCESS_KEY_ID': self.access_key_id,
+            'AWS_SECRET_ACCESS_KEY': self.secret_access_key,
+            'AWS_SESSION_TOKEN': self.session_token
+        }
+
+    @property
+    def console(self):
+        return {
+            'sessionId': self.access_key_id,
+            'sessionKey': self.secret_access_key,
+            'sessionToken': self.session_token
+        }
+
+    @credentials.setter
+    def credentials(self, credentials):
+        if isinstance(credentials['Expiration'], str):
+            credentials['Expiration'] = datetime.fromisoformat(credentials['Expiration'])
         self._credentials = credentials
 
-    def configure_cli(self, profile):
-        for _ in self._credentials:
-            if _ in CredentialsHelper.CNAMES:
-                subprocess.run([
-                    'aws', 'configure',
-                    '--profile', profile,
-                    'set', CredentialsHelper.CNAMES[_]['awscli'], self._credentials[_]
-                ])
+    @property
+    def expiration(self):
+        return self.credentials['Expiration']
 
-    def configure_export(self, profile=None):
-        exports = []
-        for _ in self._credentials:
-            if _ in CredentialsHelper.CNAMES:
-                export = f'export {CredentialsHelper.CNAMES[_]["env"]}={self._credentials[_]}'
-                exports.append(export)
-        return '\n'.join(exports)
+    @property
+    def duration(self):
+        return int((self.expiration - datetime.now(timezone.utc)).total_seconds())
 
-    def configure_json(self):
-        export = {
-            **self._credentials,
-            **{
-                'Version': 1,
-                'Expiration': self._credentials['Expiration'].isoformat()
-            }
-        }
-        return json.dumps(export)
+    @property
+    def expired(self):
+        return self.expiration < datetime.now(timezone.utc)
 
-    def console_signin(self, duration):
-        session = {}
-        for _ in self._credentials:
-            if _ in CredentialsHelper.CNAMES:
-                session.update({
-                    CredentialsHelper.CNAMES[_]['console']: self._credentials[_]
-                })
+    def to_cli_cmds(self, profile):
+        cmds = []
+        for key, value in self.cli.items():
+            cmds.append([
+                'aws', 'configure',
+                '--profile', profile,
+                'set', key, value
+            ])
+        return cmds
 
+    def to_exports(self):
+        return [f'export {key}={value}' for key, value in self.env.items()]
+
+    def to_json(self):
+        return json.dumps({
+            **self.credentials,
+            'Version': 1
+        }, default=json_serial)
+
+    def to_console_url(self, duration=None):
+        duration = duration or self.duration
         params = {
             'Action': 'getSigninToken',
-            'Session': json.dumps(session),
+            'Session': json.dumps(self.console),
             'SessionDuration': duration
         }
         response = requests.get('https://signin.aws.amazon.com/federation', params=params)
@@ -132,3 +163,11 @@ def validate_empty(answers, s):
     if not s:
         raise ValidationError('', reason='Must not be empty')
     return True
+
+
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code"""
+
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    raise TypeError('Type %s not serializable' % type(obj))
