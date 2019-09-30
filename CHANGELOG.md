@@ -1,6 +1,6 @@
 # CHANGELOG
 
-## Unreleased
+## 1.1.1 (2019-09-30)
 
 * Credentials are now cached using keyring. When using login, you can provide `-r` option to force credentials renew.
 
