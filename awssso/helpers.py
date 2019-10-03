@@ -92,10 +92,6 @@ class CredentialsHelper():
         return self.credentials['Expiration']
 
     @property
-    def duration(self):
-        return int((self.expiration - datetime.now(timezone.utc)).total_seconds())
-
-    @property
     def expired(self):
         return self.expiration < datetime.now(timezone.utc)
 
@@ -119,7 +115,6 @@ class CredentialsHelper():
         }, default=json_serial)
 
     def to_console_url(self, duration=None):
-        duration = duration or self.duration
         params = {
             'Action': 'getSigninToken',
             'Session': json.dumps(self.console),
