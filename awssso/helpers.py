@@ -34,24 +34,35 @@ class SecretsManager():
 
 
 class CredentialsHelper():
-    def __init__(self, credentials):
+    def __init__(self, credentials={}):
         self.credentials = credentials
 
     @property
     def credentials(self):
         return self._credentials
 
+    @credentials.setter
+    def credentials(self, credentials):
+        if isinstance(credentials, str):
+            credentials = json.loads(credentials)
+        try:
+            if isinstance(credentials['Expiration'], str):
+                credentials['Expiration'] = datetime.fromisoformat(credentials['Expiration'])
+        except KeyError:
+            pass
+        self._credentials = credentials
+
     @property
     def access_key_id(self):
-        return self.credentials['AccessKeyId']
+        return self.credentials.get('AccessKeyId')
 
     @property
     def secret_access_key(self):
-        return self.credentials['SecretAccessKey']
+        return self.credentials.get('SecretAccessKey')
 
     @property
     def session_token(self):
-        return self.credentials['SessionToken']
+        return self.credentials.get('SessionToken')
 
     @property
     def json(self):
@@ -81,15 +92,9 @@ class CredentialsHelper():
             'sessionToken': self.session_token
         }
 
-    @credentials.setter
-    def credentials(self, credentials):
-        if isinstance(credentials['Expiration'], str):
-            credentials['Expiration'] = datetime.fromisoformat(credentials['Expiration'])
-        self._credentials = credentials
-
     @property
     def expiration(self):
-        return self.credentials['Expiration']
+        return self.credentials.get('Expiration', datetime.fromtimestamp(0, timezone.utc))
 
     @property
     def duration(self):
@@ -118,13 +123,13 @@ class CredentialsHelper():
             'Version': 1
         }, default=json_serial)
 
-    def to_console_url(self, duration=None):
-        duration = duration or self.duration
+    def to_console_url(self, session_duration=None):
         params = {
             'Action': 'getSigninToken',
-            'Session': json.dumps(self.console),
-            'SessionDuration': duration
+            'Session': json.dumps(self.console)
         }
+        if session_duration:
+            params['SessionDuration'] = session_duration
         response = requests.get('https://signin.aws.amazon.com/federation', params=params)
 
         login_request = requests.Request(

@@ -1,8 +1,11 @@
+import logging
 import xml.etree.ElementTree as ET
 from base64 import b64decode
 
 import boto3
 from botocore.exceptions import ClientError
+
+LOG = logging.getLogger(__name__)
 
 
 class Error(Exception):
@@ -48,6 +51,10 @@ class SAMLHelper():
         # The identity of the caller is validated by using keys in the metadata document that is uploaded for the SAML provider entity for your identity provider.
         # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sts.html#STS.Client.assume_role_with_saml
         self._sts = boto3.client('sts', aws_access_key_id='', aws_secret_access_key='', aws_session_token='')
+
+        if LOG.level == logging.DEBUG:
+            boto3.set_stream_logger('', logging.DEBUG)
+
         self._root = ET.fromstring(b64decode(encoded_payload))
         self._role_arn, self._principal_arn = self._get_roles()
         self._duration = self._get_duration()

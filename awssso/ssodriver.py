@@ -1,12 +1,15 @@
+import logging
 import pickle
 from hashlib import sha256
 
 from selenium import webdriver
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+
+LOG = logging.getLogger(__name__)
 
 
 class Error(Exception):
@@ -25,6 +28,7 @@ class Error(Exception):
 class AlertMessage(Error):
     """Raised when alert frame is displayed."""
     pass
+
 
 class MFACodeNeeded(Error):
     """Raised when MFA code is needed."""

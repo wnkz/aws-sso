@@ -9,6 +9,7 @@ twine = "*"
 setuptools = "*"
 wheel = "*"
 pylint = "*"
+jupyter = "*"
 
 [packages]
 awssso = {editable = true,path = "."}
