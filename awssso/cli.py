@@ -13,6 +13,7 @@ from awssso import __version__
 from awssso.config import Configuration
 from awssso.helpers import (SPINNER_MSGS, CredentialsHelper, SecretsManager,
                             config_override, validate_empty, validate_url)
+from awssso.nonterminal import NonInteractiveRender, Bland
 from awssso.saml import AssumeRoleValidationError, BotoClientError, SAMLHelper
 from awssso.ssoclient import SSOClient
 from awssso.ssodriver import AlertMessage, MFACodeNeeded, SSODriver
@@ -21,8 +22,12 @@ from awssso.ssodriver import AlertMessage, MFACodeNeeded, SSODriver
 def __refresh_token(url, username, password, config_dir, headless=True, spinner=True):
     spinner = Halo(enabled=spinner)
     try:
-        spinner.start(SPINNER_MSGS['token_refresh'])
         driver = SSODriver(url, username, headless=headless, cookie_dir=config_dir)
+    except Exception as e:
+        sys.stderr.write(e.msg+'\n')
+        raise e
+    try:
+        spinner.start(SPINNER_MSGS['token_refresh'])
         try:
             return driver.refresh_token(username, password)
         except MFACodeNeeded as e:
@@ -55,20 +60,23 @@ def __get_or_refresh_token(url, username, password, secrets, config_dir, force_r
         secrets.set('authn-expiry-date', str(expiry_date))
     return token
 
-
 def configure(args):
     profile = args.profile
     cfg = Configuration()
     params = config_override(cfg.config, profile, args)
 
+    render = None
+    if bool(os.getenv('AWSSSO_NO_CONSOLE', False)):
+        render = NonInteractiveRender(theme=Bland())
+
     try:
         inquirer.prompt([
-            inquirer.Text('url', message='URL', default=params.get('url', ''), validate=validate_url),
-            inquirer.Text('aws_profile', message='AWS CLI profile', default=params.get('aws_profile', profile), validate=validate_empty),
-            inquirer.Text('username', message='Username', default=params.get('username', ''), validate=validate_empty)
-        ], answers=params, raise_keyboard_interrupt=True)
+            inquirer.Text('url', message='URL', default=params.get('url', ''), validate=validate_url, show_default=bool(os.getenv('AWSSSO_NO_CONSOLE', False))),
+            inquirer.Text('aws_profile', message='AWS CLI profile', default=params.get('aws_profile', profile), validate=validate_empty, show_default=bool(os.getenv('AWSSSO_NO_CONSOLE', False))),
+            inquirer.Text('username', message='Username', default=params.get('username', ''), validate=validate_empty, show_default=bool(os.getenv('AWSSSO_NO_CONSOLE', False)))
+        ], answers=params, raise_keyboard_interrupt=True, render=render)
         secrets = SecretsManager(params.get('username'), params.get('url'))
-        password = inquirer.password(message='Password', default=secrets.get('credentials', ''), validate=validate_empty)
+        password = inquirer.password(message='Password', default=secrets.get('credentials', os.getenv('AWSSSO_PASSWORD', '')), validate=validate_empty, render=render)
 
         token = __get_or_refresh_token(
             params['url'], params['username'], password,
