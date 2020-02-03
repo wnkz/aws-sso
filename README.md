@@ -36,7 +36,12 @@ brew cask install chromedriver
 ## Installation
 
 ```shell
+# Remote repository
 pip install awssso
+
+# Local filepath
+# https://packaging.python.org/tutorials/installing-packages/#installing-from-a-local-src-tree
+pip install .
 ```
 
 ## Getting Started
