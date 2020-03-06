@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 import webbrowser
 from time import time
 
@@ -228,5 +229,6 @@ def main():
         func = args.func
         if callable(func):
             func(args)
-    except AttributeError:
+    except AttributeError as ae:
+        traceback.print_exception(AttributeError, ae, ae.__traceback__)
         parser.print_help(sys.stderr)

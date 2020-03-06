@@ -31,6 +31,7 @@ setup_options = dict(
     },
     packages=find_packages(exclude=['tests*']),
     install_requires=requires,
+    python_requires='>=3.7',
     license='Apache License 2.0',
     classifiers=[
         'Development Status :: 5 - Production/Stable',

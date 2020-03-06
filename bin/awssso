@@ -5,7 +5,8 @@ import os
 import inspect
 
 # First, in case we are not a proper Python module yet we grab our path and add it to PYTHONPATH
-import traceback
+if sys.version_info < (3, 7):
+    raise Exception('Only Python 3.7+ supported!')
 
 from awssso.cli import main
 
