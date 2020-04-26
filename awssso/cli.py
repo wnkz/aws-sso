@@ -20,7 +20,7 @@ from awssso.ssoclient import SSOClient
 from awssso.ssodriver import AlertMessage, MFACodeNeeded, SSODriver
 
 
-def __refresh_token(url, username, password, config_dir, headless=True, spinner=True):
+def __refresh_token(url, username, password, config_dir, headless=True, spinner=True, render=None):
     spinner = Halo(enabled=spinner)
     try:
         driver = SSODriver(url, username, headless=headless, cookie_dir=config_dir)
@@ -33,7 +33,7 @@ def __refresh_token(url, username, password, config_dir, headless=True, spinner=
             return driver.refresh_token(username, password)
         except MFACodeNeeded as e:
             spinner.stop()
-            mfacode = inquirer.text(message='MFA Code')
+            mfacode = inquirer.text(message='MFA Code', render=render)
             spinner.start(SPINNER_MSGS['mfa_send'])
             driver.send_mfa(e.mfa_form, mfacode)
             spinner.start(SPINNER_MSGS['token_refresh'])
@@ -49,12 +49,13 @@ def __refresh_token(url, username, password, config_dir, headless=True, spinner=
         driver.close()
 
 
-def __get_or_refresh_token(url, username, password, secrets, config_dir, force_refresh=False, headless=True, spinner=True):
+def __get_or_refresh_token(url, username, password, secrets, config_dir, force_refresh=False, headless=True, spinner=True, render=None):
     token = secrets.get('authn-token')
     stored_password = secrets.get('credentials')
     expiry_date = int(secrets.get('authn-expiry-date', '0'))
     if (force_refresh) or (not token) or (time() > expiry_date) or (stored_password != password):
-        token, expiry_date = __refresh_token(url, username, password, config_dir, headless, spinner)
+        res = __refresh_token(url, username, password, config_dir, headless, spinner, render=render)
+        token, expiry_date = res
         if stored_password != password:
             secrets.set('credentials', password)
         secrets.set('authn-token', token)
@@ -81,7 +82,8 @@ def configure(args):
 
         token = __get_or_refresh_token(
             params['url'], params['username'], password,
-            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
+            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner,
+            render=render
         )
         sso = SSOClient(token, params['region'])
 
@@ -115,6 +117,10 @@ def login(args):
     if profile not in cfg.config:
         sys.exit(f'profile {profile} does not exist, use "awssso configure -p {profile}" to create it')
 
+    render = None
+    if bool(os.getenv('AWSSSO_NO_CONSOLE', False)):
+        render = NonInteractiveRender(theme=Bland())
+
     params = config_override(cfg.config, profile, args)
     aws_profile = params.get('aws_profile', profile)
     secrets = SecretsManager(params.get('username'), params.get('url'))
@@ -126,7 +132,7 @@ def login(args):
     try:
         token = __get_or_refresh_token(
             params['url'], params['username'], password,
-            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
+            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner, render=render
         )
         sso = SSOClient(token, params['region'])
 

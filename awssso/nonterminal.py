@@ -91,7 +91,7 @@ class NonInteractiveRender(ConsoleRender):
         self._previous_error = None
 
     def _process_input(self, render):
-        raise errors.EndOfInput(render.question.default)
+        raise errors.EndOfInput(input())
 
     @property
     def width(self):
