@@ -1,3 +1,7 @@
+import traceback
+
+import sys
+
 import requests
 
 class SSOClient():
@@ -19,7 +23,14 @@ class SSOClient():
 
     def get_profiles(self, instance_id):
         r = self._s.get(f'https://portal.sso.{self._region}.amazonaws.com/instance/appinstance/{instance_id}/profiles')
-        return r.json()['result']
+        try:
+            return r.json()['result']
+        except KeyError as ke:
+            # traceback.print_exception(ke.__class__, ke, ke.__traceback__)
+            print(r.json(), file=sys.stderr)
+            print('No profiles were found with ID {} in region {}. Is your region correct?'.format(instance_id, self._region, r.json()), file=sys.stderr)
+            raise Exception(r.json())
+            # raise ke
 
     def get_saml_payload(self, instance_id, profile_id):
         for profile in self.get_profiles(instance_id):

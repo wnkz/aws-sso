@@ -95,10 +95,21 @@ class SSODriver():
             self.check_alert()
             self.check_mfa()
 
+    _attempts = 0
     def get_token(self, restore=False):
-        WebDriverWait(self._driver, 1, poll_frequency=self._poll_frequency).until(
-            EC.presence_of_element_located((By.TAG_NAME, 'portal-dashboard'))
-        )
+        try:
+            WebDriverWait(self._driver, 10 if self._attempts > 0 else 5, poll_frequency=self._poll_frequency).until(
+                EC.presence_of_element_located((By.TAG_NAME, 'portal-dashboard')))
+        except TimeoutException:
+            try:
+                alert = WebDriverWait(self._driver, 1, poll_frequency=self._poll_frequency).until(
+                    EC.presence_of_element_located((By.ID, 'alertFrame')))
+                if alert.text:
+                    raise Exception(alert.text)
+            except TimeoutException:
+                pass
+            self._attempts += 1
+            raise
         self._driver.get(self._url)
         cookie = self._driver.get_cookie('x-amz-sso_authn')
         if restore:

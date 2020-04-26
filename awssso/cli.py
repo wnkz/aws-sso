@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 import webbrowser
 from time import time
 
@@ -13,21 +14,26 @@ from awssso import __version__
 from awssso.config import Configuration
 from awssso.helpers import (SPINNER_MSGS, CredentialsHelper, SecretsManager,
                             config_override, validate_empty, validate_url)
+from awssso.nonterminal import NonInteractiveRender, Bland
 from awssso.saml import AssumeRoleValidationError, BotoClientError, SAMLHelper
 from awssso.ssoclient import SSOClient
 from awssso.ssodriver import AlertMessage, MFACodeNeeded, SSODriver
 
 
-def __refresh_token(url, username, password, config_dir, headless=True, spinner=True):
+def __refresh_token(url, username, password, config_dir, headless=True, spinner=True, render=None):
     spinner = Halo(enabled=spinner)
     try:
-        spinner.start(SPINNER_MSGS['token_refresh'])
         driver = SSODriver(url, username, headless=headless, cookie_dir=config_dir)
+    except Exception as e:
+        sys.stderr.write(e.msg+'\n')
+        raise e
+    try:
+        spinner.start(SPINNER_MSGS['token_refresh'])
         try:
             return driver.refresh_token(username, password)
         except MFACodeNeeded as e:
             spinner.stop()
-            mfacode = inquirer.text(message='MFA Code')
+            mfacode = inquirer.text(message='MFA Code', render=render)
             spinner.start(SPINNER_MSGS['mfa_send'])
             driver.send_mfa(e.mfa_form, mfacode)
             spinner.start(SPINNER_MSGS['token_refresh'])
@@ -43,36 +49,41 @@ def __refresh_token(url, username, password, config_dir, headless=True, spinner=
         driver.close()
 
 
-def __get_or_refresh_token(url, username, password, secrets, config_dir, force_refresh=False, headless=True, spinner=True):
+def __get_or_refresh_token(url, username, password, secrets, config_dir, force_refresh=False, headless=True, spinner=True, render=None):
     token = secrets.get('authn-token')
     stored_password = secrets.get('credentials')
     expiry_date = int(secrets.get('authn-expiry-date', '0'))
     if (force_refresh) or (not token) or (time() > expiry_date) or (stored_password != password):
-        token, expiry_date = __refresh_token(url, username, password, config_dir, headless, spinner)
+        res = __refresh_token(url, username, password, config_dir, headless, spinner, render=render)
+        token, expiry_date = res
         if stored_password != password:
             secrets.set('credentials', password)
         secrets.set('authn-token', token)
         secrets.set('authn-expiry-date', str(expiry_date))
     return token
 
-
 def configure(args):
     profile = args.profile
     cfg = Configuration()
     params = config_override(cfg.config, profile, args)
 
+    render = None
+    if bool(os.getenv('AWSSSO_NO_CONSOLE', False)):
+        render = NonInteractiveRender(theme=Bland())
+
     try:
         inquirer.prompt([
-            inquirer.Text('url', message='URL', default=params.get('url', ''), validate=validate_url),
-            inquirer.Text('aws_profile', message='AWS CLI profile', default=params.get('aws_profile', profile), validate=validate_empty),
-            inquirer.Text('username', message='Username', default=params.get('username', ''), validate=validate_empty)
-        ], answers=params, raise_keyboard_interrupt=True)
+            inquirer.Text('url', message='URL', default=params.get('url', ''), validate=validate_url, show_default=bool(os.getenv('AWSSSO_NO_CONSOLE', False))),
+            inquirer.Text('aws_profile', message='AWS CLI profile', default=params.get('aws_profile', profile), validate=validate_empty, show_default=bool(os.getenv('AWSSSO_NO_CONSOLE', False))),
+            inquirer.Text('username', message='Username', default=params.get('username', ''), validate=validate_empty, show_default=bool(os.getenv('AWSSSO_NO_CONSOLE', False)))
+        ], answers=params, raise_keyboard_interrupt=True, render=render)
         secrets = SecretsManager(params.get('username'), params.get('url'))
-        password = inquirer.password(message='Password', default=secrets.get('credentials', ''), validate=validate_empty)
+        password = inquirer.password(message='Password', default=secrets.get('credentials', os.getenv('AWSSSO_PASSWORD', '')), validate=validate_empty, render=render)
 
         token = __get_or_refresh_token(
             params['url'], params['username'], password,
-            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
+            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner,
+            render=render
         )
         sso = SSOClient(token, params['region'])
 
@@ -106,6 +117,10 @@ def login(args):
     if profile not in cfg.config:
         sys.exit(f'profile {profile} does not exist, use "awssso configure -p {profile}" to create it')
 
+    render = None
+    if bool(os.getenv('AWSSSO_NO_CONSOLE', False)):
+        render = NonInteractiveRender(theme=Bland())
+
     params = config_override(cfg.config, profile, args)
     aws_profile = params.get('aws_profile', profile)
     secrets = SecretsManager(params.get('username'), params.get('url'))
@@ -117,7 +132,7 @@ def login(args):
     try:
         token = __get_or_refresh_token(
             params['url'], params['username'], password,
-            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner
+            secrets, cfg.configdir, args.force_refresh, args.headless, args.spinner, render=render
         )
         sso = SSOClient(token, params['region'])
 
@@ -220,5 +235,6 @@ def main():
         func = args.func
         if callable(func):
             func(args)
-    except AttributeError:
+    except AttributeError as ae:
+        traceback.print_exception(AttributeError, ae, ae.__traceback__)
         parser.print_help(sys.stderr)
